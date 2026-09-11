@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <mutex>
 #include <string>
 #include <vector>
 
@@ -15,11 +16,25 @@ namespace ra::common {
 /// library, unlike the other ports which use their runtime's built-in one
 /// (node:crypto / System.Security.Cryptography / Python's os.urandom).
 /// A Windows backend (BCryptGenRandom) is not implemented; see TODO.md.
+///
+/// The device file is opened once per process and kept open (guarded by a
+/// mutex for concurrent callers), not reopened on every call - reopening was
+/// the original implementation, and it made every ID/route-id generation a
+/// fopen+fread+fclose cycle. Found via seda-bus-compare's cross-language
+/// throughput benchmark: it made seda-bus-cpp's numbers 20-30x slower than
+/// seda-bus-rust's for identical work, entirely due to this, not anything
+/// about C++ or the bus itself - every other port's random source is a
+/// single syscall (or, for Python's non-cryptographic RNG, no syscall at
+/// all), never a re-opened file handle.
 inline void SecureRandomBytes(uint8_t* out, size_t count) {
-    std::FILE* f = std::fopen("/dev/urandom", "rb");
-    if (f == nullptr) throw RaException::Crypto("could not open /dev/urandom");
-    size_t read = std::fread(out, 1, count, f);
-    std::fclose(f);
+    static std::mutex urandom_mutex;
+    static std::FILE* urandom = [] {
+        std::FILE* f = std::fopen("/dev/urandom", "rb");
+        if (f == nullptr) throw RaException::Crypto("could not open /dev/urandom");
+        return f;
+    }();
+    std::lock_guard<std::mutex> lock(urandom_mutex);
+    size_t read = std::fread(out, 1, count, urandom);
     if (read != count) throw RaException::Crypto("short read from /dev/urandom");
 }
 
