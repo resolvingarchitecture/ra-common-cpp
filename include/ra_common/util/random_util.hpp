@@ -1,41 +1,38 @@
 #pragma once
 
 #include <cstdint>
-#include <cstdio>
 #include <cstring>
-#include <mutex>
 #include <string>
+#include <sys/random.h>
 #include <vector>
 
 #include "ra_common/exception.hpp"
 
 namespace ra::common {
 
-/// Fills `out` with cryptographically-strong random bytes from /dev/urandom.
-/// POSIX-only (Linux/macOS) - there is no portable CSPRNG in the C++ standard
-/// library, unlike the other ports which use their runtime's built-in one
-/// (node:crypto / System.Security.Cryptography / Python's os.urandom).
-/// A Windows backend (BCryptGenRandom) is not implemented; see TODO.md.
+/// Fills `out` with cryptographically-strong random bytes via getentropy(2).
+/// POSIX-only (Linux glibc >=2.25/macOS >=10.12) - there is no portable
+/// CSPRNG in the C++ standard library, unlike the other ports which use
+/// their runtime's built-in one (node:crypto / System.Security.Cryptography
+/// / Python's os.urandom). A Windows backend (BCryptGenRandom) is not
+/// implemented; see TODO.md.
 ///
-/// The device file is opened once per process and kept open (guarded by a
-/// mutex for concurrent callers), not reopened on every call - reopening was
-/// the original implementation, and it made every ID/route-id generation a
-/// fopen+fread+fclose cycle. Found via seda-bus-compare's cross-language
-/// throughput benchmark: it made seda-bus-cpp's numbers 20-30x slower than
-/// seda-bus-rust's for identical work, entirely due to this, not anything
-/// about C++ or the bus itself - every other port's random source is a
-/// single syscall (or, for Python's non-cryptographic RNG, no syscall at
-/// all), never a re-opened file handle.
+/// This used to go through a process-wide /dev/urandom FILE* guarded by a
+/// mutex, which serialized every concurrent caller on one lock - found via
+/// seda-bus-compare's cross-language throughput benchmark to cap seda-bus-cpp's
+/// parallel scaling (independent-channel throughput) far below Rust/Go's,
+/// even after fixing the earlier reopen-per-call bug. getentropy() is a
+/// direct syscall with no shared file descriptor or handle, so no lock is
+/// needed at all - each thread just calls it independently. It caps out at
+/// 256 bytes/call, which is not a constraint here (largest request is 16
+/// bytes, for envelope ids).
 inline void SecureRandomBytes(uint8_t* out, size_t count) {
-    static std::mutex urandom_mutex;
-    static std::FILE* urandom = [] {
-        std::FILE* f = std::fopen("/dev/urandom", "rb");
-        if (f == nullptr) throw RaException::Crypto("could not open /dev/urandom");
-        return f;
-    }();
-    std::lock_guard<std::mutex> lock(urandom_mutex);
-    size_t read = std::fread(out, 1, count, urandom);
-    if (read != count) throw RaException::Crypto("short read from /dev/urandom");
+    while (count > 0) {
+        size_t chunk = count < 256 ? count : 256;
+        if (getentropy(out, chunk) != 0) throw RaException::Crypto("getentropy failed");
+        out += chunk;
+        count -= chunk;
+    }
 }
 
 inline std::vector<uint8_t> RandomBytesOf(size_t count) {
