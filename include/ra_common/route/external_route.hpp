@@ -28,6 +28,8 @@ public:
     RouteMeta& Meta() override { return meta_; }
     const RouteMeta& Meta() const override { return meta_; }
 
+    std::unique_ptr<Route> Clone() const override { return std::make_unique<SimpleExternalRoute>(*this); }
+
     nlohmann::json ToJson() const override {
         nlohmann::json obj = {{"type", Type()}, {"meta", meta_.ToJson()}};
         if (origination) obj["origination"] = origination->ToJson();
@@ -68,6 +70,8 @@ public:
     RouteMeta& Meta() override { return base_.Meta(); }
     const RouteMeta& Meta() const override { return base_.Meta(); }
     const SimpleExternalRoute& base() const { return base_; }
+
+    std::unique_ptr<Route> Clone() const override { return std::make_unique<RelayedExternalRoute>(*this); }
 
     nlohmann::json ToJson() const override {
         nlohmann::json obj = {{"type", Type()}, {"base", base_.ToJson()}};

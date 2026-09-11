@@ -149,14 +149,14 @@ public:
     route::Route* GetRoute() {
         if (route == nullptr) {
             auto* current = dynamic_routing_slip.CurrentRoute();
-            if (current != nullptr) route = route::RouteFromJson(current->ToJson());
+            if (current != nullptr) route = current->Clone();
         }
         return route.get();
     }
 
     void Ratchet() {
         auto* next = dynamic_routing_slip.NextRoute();
-        route = next != nullptr ? route::RouteFromJson(next->ToJson()) : nullptr;
+        route = next != nullptr ? next->Clone() : nullptr;
     }
 
     void AddRoute(const std::string& service, const std::string& operation) {

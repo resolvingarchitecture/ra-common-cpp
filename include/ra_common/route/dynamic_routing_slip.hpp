@@ -24,6 +24,13 @@ public:
     RouteMeta& Meta() override { return meta_; }
     const RouteMeta& Meta() const override { return meta_; }
 
+    std::unique_ptr<Route> Clone() const override {
+        auto slip = std::make_unique<DynamicRoutingSlip>(meta_);
+        for (const auto& r : routes_) slip->routes_.push_back(r->Clone());
+        if (current_) slip->current_ = current_->Clone();
+        return slip;
+    }
+
     /// Push `route` onto the stack, stamping it with this slip's route id.
     void AddRoute(std::unique_ptr<Route> route) {
         route->set_route_id(meta_.route_id);

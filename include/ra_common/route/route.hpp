@@ -21,6 +21,18 @@ public:
     virtual const RouteMeta& Meta() const = 0;
     virtual nlohmann::json ToJson() const = 0;
 
+    /// An independently-owned copy - Envelope::GetRoute() needs one since it
+    /// caches the current route in its own unique_ptr, separate from the
+    /// slip's. Deliberately NOT ToJson()-then-FromJson(): that round trip
+    /// was the original implementation, and it made every GetRoute() call
+    /// (i.e. every Bus::Publish, via TargetService) build and immediately
+    /// discard a JSON tree just to copy a handful of scalar fields. Found
+    /// the same way as random_util.hpp's fix: seda-bus-compare's benchmark
+    /// showed seda-bus-cpp's full publish path running at ~11% of its own
+    /// envelope-construction-only throughput, which a JSON round trip on
+    /// the hot path fully explains and a plain field copy does not.
+    virtual std::unique_ptr<Route> Clone() const = 0;
+
     std::optional<std::string> service() const { return Meta().service; }
     std::optional<std::string> operation() const { return Meta().operation; }
     bool routed() const { return Meta().routed; }
@@ -40,6 +52,8 @@ public:
     std::string Type() const override { return "simple"; }
     RouteMeta& Meta() override { return meta_; }
     const RouteMeta& Meta() const override { return meta_; }
+
+    std::unique_ptr<Route> Clone() const override { return std::make_unique<SimpleRoute>(meta_); }
 
     nlohmann::json ToJson() const override { return {{"type", Type()}, {"meta", meta_.ToJson()}}; }
 
