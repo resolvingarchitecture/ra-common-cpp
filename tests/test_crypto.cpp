@@ -26,9 +26,9 @@ TEST_CASE("crypto hash + password + hashcash + multihash") {
     CHECK(Multihash::FromHexString(m.ToHexString()).Equals(m));
     CHECK(Multihash::FromBase58(m.ToBase58()).Equals(m));
 
-    auto hc = HashCash::Mint("brian@resolvingarchitecture.io", 10);
+    auto hc = HashCash::Mint("brian@resolvingarchitecture.dev", 10);
     CHECK(hc.ComputedBits() >= 10);
-    CHECK(hc.IsValidFor("brian@resolvingarchitecture.io", 10));
+    CHECK(hc.IsValidFor("brian@resolvingarchitecture.dev", 10));
     CHECK_FALSE(hc.IsValidFor("nope", 10));
     CHECK(HashCash::Parse(hc.token()).resource() == hc.resource());
 
